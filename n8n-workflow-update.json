@@ -1,0 +1,36 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "url": "http://localhost:3001/webhook/completion",
+        "sendHeaders": true,
+        "specifyHeaders": "json",
+        "jsonHeaders": "{\"Content-Type\":\"application/json\"}",
+        "sendBody": true,
+        "bodyContentType": "json",
+        "jsonBody": "{\"message\":\"Workflow was Finished\"}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1724,
+        604
+      ],
+      "id": "26f6b95d-dfe0-4c17-a03b-094ff92fbb27",
+      "name": "HTTP Request1"
+    }
+  ],
+  "connections": {
+    "HTTP Request1": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f1f6a686d96ebd89a3adeecb48a163a3c01b1c043e688240d830bb5b96cb0362"
+  }
+}
