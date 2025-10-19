@@ -38,13 +38,20 @@ function App() {
     }
 
     try {
-      const res = await fetch("https://kul5.app.n8n.cloud/webhook/from-vercel", {
+      console.log("Sending data to n8n:", payload)
+      
+      const res = await fetch("https://kul5.app.n8n.cloud/webhook-test/from-vercel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
 
+      console.log("Response status:", res.status)
+      const responseText = await res.text()
+      console.log("Response body:", responseText)
+
       if (res.ok) {
+        console.log("✅ Success! Data sent to n8n")
         setIsSubmitted(true)
         setFormData({
           jobDescription: '',
@@ -53,11 +60,12 @@ function App() {
         })
         setError('')
       } else {
-        setError(`n8n responded with error: ${res.status}`)
+        console.log("❌ Error response:", res.status, responseText)
+        setError(`n8n responded with error: ${res.status} - ${responseText}`)
       }
     } catch (err) {
-      console.error("Error sending data:", err)
-      setError("Failed to connect to n8n")
+      console.error("❌ Error sending data:", err)
+      setError(`Failed to connect to n8n: ${err.message}`)
     } finally {
       setIsSubmitting(false)
     }
