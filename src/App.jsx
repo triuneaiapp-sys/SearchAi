@@ -40,7 +40,7 @@ function App() {
     try {
       console.log("Sending data to n8n:", payload)
       
-      const res = await fetch("https://kul5.app.n8n.cloud/webhook-test/from-vercel", {
+      const res = await fetch("https://kul5.app.n8n.cloud/webhook/from-vercel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
