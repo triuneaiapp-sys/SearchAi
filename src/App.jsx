@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input.jsx'
 import { Label } from '@/components/ui/label.jsx'
 import { Textarea } from '@/components/ui/textarea.jsx'
-import { Users, Target, Zap, CheckCircle } from 'lucide-react'
+import { Target, Zap, CheckCircle } from 'lucide-react'
 import './App.css'
 
 function App() {
@@ -16,7 +16,6 @@ function App() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [error, setError] = useState(null)
-  const [retryCount, setRetryCount] = useState(0)
 
 
   const handleInputChange = (e) => {
@@ -30,191 +29,38 @@ function App() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     setIsSubmitting(true)
-    setError(null) // Clear any previous errors
+    setError(null)
 
-    // Generate a unique sessionId for this submission
-    const sessionId = `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-
-    const makeRequest = async (attempt = 1) => {
-      try {
-        // Construct the URL with query parameters for GET request
-        const url = new URL('https://kul5.app.n8n.cloud/webhook-test/27607b39-e0f1-4c92-b139-5e7f8cda24e7')
-        url.searchParams.append('jobDescription', formData.jobDescription)
-        url.searchParams.append('recruiterName', formData.recruiterName)
-        url.searchParams.append('recruiterEmail', formData.recruiterEmail)
-        url.searchParams.append('timestamp', new Date().toISOString())
-        url.searchParams.append('sessionId', sessionId)
-        
-        console.log(`Attempt ${attempt}: Sending request to:`, url.toString())
-        console.log('Request details:', {
-          method: 'GET',
-          url: url.toString(),
-          headers: { 'Accept': 'application/json' },
-          attempt: attempt
-        })
-        
-        // Create AbortController for timeout handling
-        // n8n webhooks typically have their own timeout (5-10 minutes)
-        // We'll set a longer timeout to account for n8n's processing time
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => {
-          console.log(`Attempt ${attempt}: Request timed out after 12 minutes (n8n webhook timeout)`)
-          controller.abort()
-        }, 720000) // 12 minute timeout (longer than typical n8n timeout)
-        
-        // Submit to n8n webhook with timeout
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          mode: 'cors',
-          cache: 'no-cache',
-          signal: controller.signal,
-          headers: {
-            'Accept': 'application/json',
-          }
-        })
-        
-        clearTimeout(timeoutId)
-        console.log(`Attempt ${attempt}: Response received:`, response.status, response.statusText)
-        
-        if (response.ok) {
-          // Check if response contains "done" message
-          const responseText = await response.text()
-          console.log(`Attempt ${attempt}: Webhook response:`, responseText)
-          
-          // Parse JSON response if possible
-          let responseData = null
-          try {
-            responseData = JSON.parse(responseText)
-            console.log(`Attempt ${attempt}: Parsed response data:`, responseData)
-          } catch (e) {
-            console.log(`Attempt ${attempt}: Response is not JSON, treating as text`)
-          }
-          
-          // Check if workflow was started
-          const isWorkflowStarted = 
-            responseText.toLowerCase().includes('workflow was started') ||
-            (responseData && responseData.message && responseData.message.toLowerCase().includes('workflow was started'))
-
-          // Check if workflow is finished (for cases where it completes immediately)
-          const isWorkflowFinished = 
-            responseText.toLowerCase().includes('workflow was finished') ||
-            responseText.toLowerCase().includes('done') ||
-            responseText.toLowerCase().includes('success') ||
-            responseText.toLowerCase().includes('completed') ||
-            (responseData && (
-              responseData.message && responseData.message.toLowerCase().includes('workflow was finished') ||
-              responseData.message && responseData.message.toLowerCase().includes('done') ||
-              responseData.status === 'success' ||
-              responseData.success === true ||
-              responseData.completed === true
-            ))
-          
-          if (isWorkflowStarted) {
-            console.log(`Attempt ${attempt}: Workflow started successfully, waiting for completion...`)
-            setError(`Workflow started successfully! Please wait for completion (up to 12 minutes)...`)
-            
-            // Set a timeout to show completion after 10 minutes (simulate workflow completion)
-            setTimeout(() => {
-              if (isSubmitting) {
-                console.log('Simulating workflow completion after 10 minutes')
-                setIsSubmitted(true)
-                setFormData({
-                  jobDescription: '',
-                  recruiterName: '',
-                  recruiterEmail: ''
-                })
-                setError('')
-                setIsSubmitting(false)
-              }
-            }, 600000) // 10 minute timeout to simulate workflow completion
-            
-            return true // Success - we're waiting for the callback
-          } else if (isWorkflowFinished) {
-            console.log(`Attempt ${attempt}: Success: n8n webhook completed successfully`)
-            setIsSubmitted(true)
-            setFormData({
-              jobDescription: '',
-              recruiterName: '',
-              recruiterEmail: ''
-            })
-            setError('')
-            return true
-          } else {
-            console.log(`Attempt ${attempt}: Warning: n8n webhook response does not indicate workflow start or completion`)
-            setError(`n8n workflow response unexpected. Response: ${responseText}`)
-            return false
-          }
-        } else {
-          console.error(`Attempt ${attempt}: Webhook response not ok:`, response.status)
-          
-          // Try to get response text for better error message
-          try {
-            const errorText = await response.text()
-            console.log(`Attempt ${attempt}: Error response:`, errorText)
-            
-            if (response.status === 404 && errorText.includes('not registered')) {
-              setError(`n8n webhook not active: Please click "Execute workflow" in n8n to activate the webhook, then try again.`)
-              return false
-            } else if (response.status === 500 && errorText.includes('cancelled')) {
-              setError(`n8n workflow execution was cancelled. Please try again.`)
-              return false
-            } else if (response.status === 500 && errorText.includes('timeout')) {
-              setError(`n8n workflow timed out. The workflow may be taking too long. Please try again.`)
-              return false
-        } else if (response.status === 500 && errorText.includes('error')) {
-          if (errorText.includes('Workflow could not be started')) {
-            setError(`n8n workflow error: The workflow cannot be started. Please check your n8n workflow configuration and try again.`)
-          } else {
-            setError(`n8n workflow error: ${errorText}`)
-          }
-          return false
-        } else {
-          setError(`n8n webhook error (${response.status}): ${errorText}`)
-          return false
-        }
-          } catch (e) {
-            setError(`Webhook responded with status ${response.status}. Please try again.`)
-            return false
-          }
-        }
-      } catch (error) {
-        console.error(`Attempt ${attempt}: Error submitting form:`, error)
-        
-        if (error.name === 'AbortError') {
-          console.log(`Attempt ${attempt}: Request timed out after 10 minutes`)
-          return false
-        } else if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
-          console.log(`Attempt ${attempt}: Network error - Failed to fetch`)
-          return false
-        } else {
-          console.log(`Attempt ${attempt}: Other error:`, error.message)
-          return false
-        }
-      }
+    const payload = {
+      recruiterName: formData.recruiterName,
+      recruiterEmail: formData.recruiterEmail,
+      jobDescription: formData.jobDescription,
     }
 
-    // Try up to 3 times with exponential backoff
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      console.log(`Starting attempt ${attempt} of 3`)
-      setRetryCount(attempt - 1)
-      
-      const success = await makeRequest(attempt)
-      if (success) {
-        return // Success, exit the function
+    try {
+      const res = await fetch("https://kul5.app.n8n.cloud/webhook/from-vercel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      if (res.ok) {
+        setIsSubmitted(true)
+        setFormData({
+          jobDescription: '',
+          recruiterName: '',
+          recruiterEmail: ''
+        })
+        setError('')
+      } else {
+        setError(`n8n responded with error: ${res.status}`)
       }
-      
-      // If not the last attempt, wait before retrying
-      if (attempt < 3) {
-        const waitTime = Math.pow(2, attempt) * 1000 // 2s, 4s, 8s
-        console.log(`Attempt ${attempt} failed. Waiting ${waitTime}ms before retry...`)
-        setError(`Attempt ${attempt} failed. Retrying in ${waitTime/1000} seconds...`)
-        await new Promise(resolve => setTimeout(resolve, waitTime))
-      }
+    } catch (err) {
+      console.error("Error sending data:", err)
+      setError("Failed to connect to n8n")
+    } finally {
+      setIsSubmitting(false)
     }
-    
-    // All attempts failed
-    setError(`All 3 attempts failed. The webhook may be taking longer than expected or there may be a network issue. Please try again later.`)
-    setIsSubmitting(false)
   }
 
   if (isSubmitted) {
@@ -346,12 +192,7 @@ function App() {
                     {isSubmitting ? (
                       <div className="flex items-center justify-center space-x-2">
                         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-        <span>
-          {error && error.includes('Workflow started successfully') 
-            ? error 
-            : `Processing... ${retryCount > 0 ? `(Attempt ${retryCount + 1}/3)` : ''}`
-          }
-        </span>
+                        <span>Processing...</span>
                       </div>
                     ) : (
                       <div className="flex items-center justify-center space-x-2">
