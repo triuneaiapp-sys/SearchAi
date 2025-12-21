@@ -174,10 +174,10 @@ function App() {
                       type="email"
                       value={formData.recruiterEmail}
                       onChange={handleInputChange}
-                      placeholder="your.name@triune.com"
+                      placeholder="recruiter@triuneinfomatics.com"
                       className="border-gray-200 focus:border-sky-500 focus:ring-sky-500"
-                      pattern=".*@triune\..*"
-                      title="Please use your Triune email address"
+                      pattern="(.*@triuneinfomatics\.com|kulankur5@gmail\.com)"
+                      title="Please use your Triune Infomatics email address"
                       required
                     />
                   </div>
