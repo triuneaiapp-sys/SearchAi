@@ -38,20 +38,19 @@ function App() {
     }
 
     try {
-      console.log("Sending data to n8n:", payload)
+      console.log("Adding request to queue:", payload)
       
-      const res = await fetch("https://kul5.app.n8n.cloud/webhook/from-vercel", {
+      const res = await fetch("/api/queue/submit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
 
-      console.log("Response status:", res.status)
-      const responseText = await res.text()
-      console.log("Response body:", responseText)
+      const responseData = await res.json()
+      console.log("Response:", responseData)
 
       if (res.ok) {
-        console.log("✅ Success! Data sent to n8n")
+        console.log("✅ Success! Request queued")
         setIsSubmitted(true)
         setFormData({
           jobDescription: '',
@@ -60,12 +59,12 @@ function App() {
         })
         setError('')
       } else {
-        console.log("❌ Error response:", res.status, responseText)
-        setError(`n8n responded with error: ${res.status} - ${responseText}`)
+        console.log("❌ Error response:", res.status, responseData)
+        setError(responseData.error || `Error: ${res.status}`)
       }
     } catch (err) {
-      console.error("❌ Error sending data:", err)
-      setError(`Failed to connect to n8n: ${err.message}`)
+      console.error("❌ Error queuing request:", err)
+      setError(`Failed to queue request: ${err.message}`)
     } finally {
       setIsSubmitting(false)
     }
