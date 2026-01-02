@@ -71,11 +71,19 @@ export default async function handler(req, res) {
     const currentLock = await redis.get(lockKey);
     console.log(`🔍 Current lock status: ${currentLock || 'NOT SET'}`);
     
-    const lockAcquired = await redis.set(lockKey, 'true', { ex: 300, nx: true });
-    console.log(`🔐 Lock acquisition result: ${lockAcquired} (type: ${typeof lockAcquired})`);
+    // Check if lock exists, if not, set it
+    let hasLock = false;
+    if (!currentLock) {
+      // Lock doesn't exist, try to set it
+      await redis.set(lockKey, 'true', { ex: 300 });
+      // Verify we got it (check again immediately)
+      const verifyLock = await redis.get(lockKey);
+      hasLock = verifyLock === 'true';
+      console.log(`🔐 Lock set attempt - verification: ${hasLock}`);
+    } else {
+      console.log(`🔐 Lock already exists, cannot acquire`);
+    }
     
-    // Check if lock was acquired (Upstash returns 'OK' or true on success, null on failure)
-    const hasLock = lockAcquired === 'OK' || lockAcquired === true || lockAcquired === 1;
     console.log(`🎯 Has lock? ${hasLock}`);
     
     if (hasLock) {
@@ -94,9 +102,41 @@ export default async function handler(req, res) {
         console.log(`🔓 Lock released. Verification: ${lockReleased || 'NOT SET (good)'}`);
       }
     } else {
-      console.log('⏸️ LOCK NOT ACQUIRED - Another processor is running');
+      console.log('⏸️ LOCK NOT ACQUIRED - Another processor should be running');
       console.log(`   Lock value returned: ${lockAcquired}`);
-      console.log('   This job will be processed by the current processor');
+      
+      // Check if queue has jobs - if yes and lock is stuck, process anyway
+      const queueLength = await redis.llen('webhook_queue');
+      console.log(`📊 Current queue length: ${queueLength}`);
+      
+      if (queueLength > 0) {
+        console.log('⚠️  Queue has jobs but lock is held - checking if lock is stale...');
+        // Wait a moment and check again - if still locked and queue has items, force process
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        const stillLocked = await redis.get(lockKey);
+        const stillHasJobs = await redis.llen('webhook_queue');
+        
+        if (stillLocked && stillHasJobs > 0) {
+          console.log('⚠️  Lock appears stuck - forcing lock release and processing...');
+          await redis.del(lockKey);
+          // Try to acquire lock again
+          const forceLock = await redis.set(lockKey, 'true', { ex: 300, nx: true });
+          if (forceLock === 'OK' || forceLock === true || forceLock === 1) {
+            console.log('✅ Force acquired lock, processing queue...');
+            try {
+              await processNextJob();
+            } catch (processError) {
+              console.error('❌ Error in forced processing:', processError);
+            } finally {
+              await redis.del(lockKey);
+            }
+          }
+        } else {
+          console.log('✅ Lock was released or queue processed by another request');
+        }
+      } else {
+        console.log('✅ Queue is empty, no processing needed');
+      }
     }
 
     console.log('═══════════════════════════════════════════════════════');
