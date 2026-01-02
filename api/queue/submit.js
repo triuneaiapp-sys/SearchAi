@@ -48,7 +48,8 @@ export default async function handler(req, res) {
     const lockKey = 'queue:processing';
     const lockAcquired = await redis.set(lockKey, 'true', { ex: 300, nx: true });
     
-    if (lockAcquired) {
+    // lockAcquired will be 'OK' if lock was acquired, null if already exists
+    if (lockAcquired === 'OK' || lockAcquired === true) {
       console.log('Lock acquired, processing queue...');
       try {
         // Process all jobs in queue sequentially
