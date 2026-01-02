@@ -44,16 +44,12 @@ export default async function handler(req, res) {
     console.log(`Job ${jobId} added to queue successfully`);
 
     // Process queue sequentially - only one job at a time
-    // Check if already processing
-    const isProcessing = await redis.get('queue:processing');
+    // Use atomic SETNX to acquire lock (only sets if key doesn't exist)
+    const lockKey = 'queue:processing';
+    const lockAcquired = await redis.set(lockKey, 'true', { ex: 300, nx: true });
     
-    if (isProcessing === 'true') {
-      console.log('Queue processor already running, job will be processed by current processor');
-    } else {
-      console.log('No processor running, starting queue processor...');
-      // Set processing flag immediately to prevent concurrent processing
-      await redis.set('queue:processing', 'true', { ex: 300 }); // 5 min TTL
-      
+    if (lockAcquired) {
+      console.log('Lock acquired, processing queue...');
       try {
         // Process all jobs in queue sequentially
         await processNextJob();
@@ -62,9 +58,11 @@ export default async function handler(req, res) {
         console.error('Error stack:', processError.stack);
       } finally {
         // Always release lock
-        await redis.del('queue:processing');
+        await redis.del(lockKey);
         console.log('Queue processor finished, lock released');
       }
+    } else {
+      console.log('Queue processor already running, job will be processed by current processor');
     }
 
     return res.status(200).json({
