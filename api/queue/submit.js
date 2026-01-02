@@ -43,52 +43,28 @@ export default async function handler(req, res) {
 
     console.log(`Job ${jobId} added to queue successfully`);
 
-    // Send directly to n8n immediately (synchronous) to ensure it runs
-    console.log(`Sending job ${jobId} directly to n8n...`);
-    try {
-      const payload = {
-        recruiterName: jobData.recruiterName,
-        recruiterEmail: jobData.recruiterEmail,
-        jobDescription: jobData.jobDescription,
-        jobId: jobData.id,
-      };
+    // Process queue sequentially - only one job at a time
+    // Check if already processing
+    const isProcessing = await redis.get('queue:processing');
+    
+    if (isProcessing === 'true') {
+      console.log('Queue processor already running, job will be processed by current processor');
+    } else {
+      console.log('No processor running, starting queue processor...');
+      // Set processing flag immediately to prevent concurrent processing
+      await redis.set('queue:processing', 'true', { ex: 300 }); // 5 min TTL
       
-      console.log(`Payload:`, JSON.stringify(payload, null, 2));
-      
-      const response = await fetch('https://kul5.app.n8n.cloud/webhook/from-vercel', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      console.log(`n8n response status: ${response.status}`);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`n8n error response: ${errorText}`);
-        throw new Error(`n8n responded with status ${response.status}: ${errorText}`);
+      try {
+        // Process all jobs in queue sequentially
+        await processNextJob();
+      } catch (processError) {
+        console.error('Error processing queue:', processError);
+        console.error('Error stack:', processError.stack);
+      } finally {
+        // Always release lock
+        await redis.del('queue:processing');
+        console.log('Queue processor finished, lock released');
       }
-
-      const responseText = await response.text();
-      console.log(`Job ${jobId} sent to n8n successfully. Response: ${responseText}`);
-
-      await redis.set(`job:${jobId}`, JSON.stringify({
-        ...jobData,
-        status: 'sent',
-        sentAt: new Date().toISOString(),
-      }));
-
-      console.log(`Job ${jobId} marked as sent`);
-    } catch (error) {
-      console.error(`Error sending job ${jobId} to n8n:`, error);
-      console.error(`Error stack:`, error.stack);
-      await redis.set(`job:${jobId}`, JSON.stringify({
-        ...jobData,
-        status: 'failed',
-        error: error.message,
-        failedAt: new Date().toISOString(),
-      }));
-      // Still return success to user, but log the error
     }
 
     return res.status(200).json({
@@ -105,15 +81,13 @@ export default async function handler(req, res) {
 }
 
 async function processNextJob() {
-  try {
-    await redis.set('queue:processing', 'true');
-    
+  // Process jobs from queue until empty
+  while (true) {
     const jobJson = await redis.rpop('webhook_queue');
     
     if (!jobJson) {
-      console.log('No jobs in queue');
-      await redis.set('queue:processing', 'false');
-      return;
+      console.log('No more jobs in queue');
+      break;
     }
 
     const job = JSON.parse(jobJson);
@@ -170,14 +144,9 @@ async function processNextJob() {
         error: error.message,
         failedAt: new Date().toISOString(),
       }));
-    } finally {
-      await redis.set('queue:processing', 'false');
-      console.log('Job processing completed');
     }
-  } catch (error) {
-    console.error('Critical error in queue processor:', error);
-    console.error('Error stack:', error.stack);
-    await redis.set('queue:processing', 'false');
   }
+  
+  console.log('Queue processing completed');
 }
 
