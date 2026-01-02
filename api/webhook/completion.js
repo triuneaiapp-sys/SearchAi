@@ -1,4 +1,6 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -10,10 +12,10 @@ export default async function handler(req, res) {
 
     if (message && message.toLowerCase().includes('workflow was finished')) {
       if (jobId) {
-        const jobJson = await kv.get(`job:${jobId}`);
+        const jobJson = await redis.get(`job:${jobId}`);
         if (jobJson) {
           const job = JSON.parse(jobJson);
-          await kv.set(`job:${jobId}`, JSON.stringify({
+          await redis.set(`job:${jobId}`, JSON.stringify({
             ...job,
             status: 'completed',
             completedAt: new Date().toISOString(),
@@ -29,15 +31,15 @@ export default async function handler(req, res) {
           return res.status(404).json({ error: 'Job not found' });
         }
       } else {
-        const queueLength = await kv.llen('webhook_queue');
+        const queueLength = await redis.llen('webhook_queue');
         if (queueLength === 0) {
-          const allKeys = await kv.keys('job:*');
+          const allKeys = await redis.keys('job:*');
           for (const key of allKeys) {
-            const jobJson = await kv.get(key);
+            const jobJson = await redis.get(key);
             if (jobJson) {
               const job = JSON.parse(jobJson);
               if (job.status === 'sent' || job.status === 'processing') {
-                await kv.set(key, JSON.stringify({
+                await redis.set(key, JSON.stringify({
                   ...job,
                   status: 'completed',
                   completedAt: new Date().toISOString(),

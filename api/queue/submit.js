@@ -1,4 +1,6 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -22,8 +24,8 @@ export default async function handler(req, res) {
       createdAt: new Date().toISOString(),
     };
 
-    await kv.lpush('webhook_queue', JSON.stringify(jobData));
-    await kv.set(`job:${jobId}`, JSON.stringify(jobData));
+    await redis.lpush('webhook_queue', JSON.stringify(jobData));
+    await redis.set(`job:${jobId}`, JSON.stringify(jobData));
 
     console.log(`Job ${jobId} added to queue`);
 
@@ -41,18 +43,18 @@ export default async function handler(req, res) {
 }
 
 async function processQueue() {
-  const isProcessing = await kv.get('queue:processing');
+  const isProcessing = await redis.get('queue:processing');
   
   if (isProcessing === 'true') {
     console.log('Queue processor already running');
     return;
   }
 
-  await kv.set('queue:processing', 'true');
+  await redis.set('queue:processing', 'true');
 
   try {
     while (true) {
-      const jobJson = await kv.rpop('webhook_queue');
+      const jobJson = await redis.rpop('webhook_queue');
       
       if (!jobJson) {
         break;
@@ -61,7 +63,7 @@ async function processQueue() {
       const job = JSON.parse(jobJson);
       console.log(`Processing job ${job.id}`);
 
-      await kv.set(`job:${job.id}`, JSON.stringify({
+      await redis.set(`job:${job.id}`, JSON.stringify({
         ...job,
         status: 'processing',
         startedAt: new Date().toISOString(),
@@ -86,7 +88,7 @@ async function processQueue() {
         const responseText = await response.text();
         console.log(`Job ${job.id} sent to n8n successfully`);
 
-        await kv.set(`job:${job.id}`, JSON.stringify({
+        await redis.set(`job:${job.id}`, JSON.stringify({
           ...job,
           status: 'sent',
           sentAt: new Date().toISOString(),
@@ -95,7 +97,7 @@ async function processQueue() {
         console.log(`Job ${job.id} marked as sent, moving to next item in queue`);
       } catch (error) {
         console.error(`Error processing job ${job.id}:`, error);
-        await kv.set(`job:${job.id}`, JSON.stringify({
+        await redis.set(`job:${job.id}`, JSON.stringify({
           ...job,
           status: 'failed',
           error: error.message,
@@ -104,7 +106,7 @@ async function processQueue() {
       }
     }
   } finally {
-    await kv.set('queue:processing', 'false');
+    await redis.set('queue:processing', 'false');
     console.log('Queue processing completed');
   }
 }

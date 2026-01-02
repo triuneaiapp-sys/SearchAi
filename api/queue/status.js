@@ -1,4 +1,6 @@
-import { kv } from '@vercel/kv';
+import { Redis } from '@upstash/redis';
+
+const redis = Redis.fromEnv();
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
@@ -12,7 +14,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'jobId is required' });
     }
 
-    const jobJson = await kv.get(`job:${jobId}`);
+    const jobJson = await redis.get(`job:${jobId}`);
     
     if (!jobJson) {
       return res.status(404).json({ error: 'Job not found' });
