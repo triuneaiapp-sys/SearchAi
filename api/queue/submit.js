@@ -11,11 +11,21 @@ export default async function handler(req, res) {
   }
 
   try {
+    // Check Redis connection
+    if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
+      console.error('Missing Redis environment variables!');
+      console.error('KV_REST_API_URL:', process.env.KV_REST_API_URL ? 'SET' : 'MISSING');
+      console.error('KV_REST_API_TOKEN:', process.env.KV_REST_API_TOKEN ? 'SET' : 'MISSING');
+      return res.status(500).json({ error: 'Redis not configured' });
+    }
+
     const { recruiterName, recruiterEmail, jobDescription } = req.body;
 
     if (!recruiterName || !recruiterEmail || !jobDescription) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
+
+    console.log('Received form submission:', { recruiterName, recruiterEmail, jobDescription: jobDescription.substring(0, 50) + '...' });
 
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const jobData = {
@@ -27,20 +37,58 @@ export default async function handler(req, res) {
       createdAt: new Date().toISOString(),
     };
 
+    console.log(`Adding job ${jobId} to Redis queue...`);
     await redis.lpush('webhook_queue', JSON.stringify(jobData));
     await redis.set(`job:${jobId}`, JSON.stringify(jobData));
 
-    console.log(`Job ${jobId} added to queue`);
+    console.log(`Job ${jobId} added to queue successfully`);
 
-    // Process queue synchronously to ensure it runs
-    // Check if already processing, if not, process one item
-    const isProcessing = await redis.get('queue:processing');
-    
-    if (isProcessing !== 'true') {
-      console.log('No processor running, processing queue now...');
-      await processNextJob();
-    } else {
-      console.log('Queue processor already running, job will be processed soon');
+    // Send directly to n8n immediately (synchronous) to ensure it runs
+    console.log(`Sending job ${jobId} directly to n8n...`);
+    try {
+      const payload = {
+        recruiterName: jobData.recruiterName,
+        recruiterEmail: jobData.recruiterEmail,
+        jobDescription: jobData.jobDescription,
+        jobId: jobData.id,
+      };
+      
+      console.log(`Payload:`, JSON.stringify(payload, null, 2));
+      
+      const response = await fetch('https://kul5.app.n8n.cloud/webhook/from-vercel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      console.log(`n8n response status: ${response.status}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`n8n error response: ${errorText}`);
+        throw new Error(`n8n responded with status ${response.status}: ${errorText}`);
+      }
+
+      const responseText = await response.text();
+      console.log(`Job ${jobId} sent to n8n successfully. Response: ${responseText}`);
+
+      await redis.set(`job:${jobId}`, JSON.stringify({
+        ...jobData,
+        status: 'sent',
+        sentAt: new Date().toISOString(),
+      }));
+
+      console.log(`Job ${jobId} marked as sent`);
+    } catch (error) {
+      console.error(`Error sending job ${jobId} to n8n:`, error);
+      console.error(`Error stack:`, error.stack);
+      await redis.set(`job:${jobId}`, JSON.stringify({
+        ...jobData,
+        status: 'failed',
+        error: error.message,
+        failedAt: new Date().toISOString(),
+      }));
+      // Still return success to user, but log the error
     }
 
     return res.status(200).json({
@@ -50,7 +98,9 @@ export default async function handler(req, res) {
     });
   } catch (error) {
     console.error('Error adding to queue:', error);
-    return res.status(500).json({ error: 'Failed to queue request' });
+    console.error('Error stack:', error.stack);
+    console.error('Error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+    return res.status(500).json({ error: 'Failed to queue request', details: error.message });
   }
 }
 
