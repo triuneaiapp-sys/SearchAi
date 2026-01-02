@@ -103,7 +103,7 @@ export default async function handler(req, res) {
       }
     } else {
       console.log('⏸️ LOCK NOT ACQUIRED - Another processor should be running');
-      console.log(`   Lock value returned: ${lockAcquired}`);
+      console.log(`   Current lock value: ${currentLock}`);
       
       // Check if queue has jobs - if yes and lock is stuck, process anyway
       const queueLength = await redis.llen('webhook_queue');
