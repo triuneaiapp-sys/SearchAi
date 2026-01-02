@@ -73,13 +73,14 @@ export default async function handler(req, res) {
     
     // Check if lock exists, if not, set it
     let hasLock = false;
-    if (!currentLock) {
+    if (!currentLock || currentLock === null || currentLock === '') {
       // Lock doesn't exist, try to set it
       await redis.set(lockKey, 'true', { ex: 300 });
       // Verify we got it (check again immediately)
       const verifyLock = await redis.get(lockKey);
-      hasLock = verifyLock === 'true';
-      console.log(`🔐 Lock set attempt - verification: ${hasLock}`);
+      // Handle both string 'true' and truthy values
+      hasLock = verifyLock === 'true' || verifyLock === true || (verifyLock && verifyLock.toString() === 'true');
+      console.log(`🔐 Lock set attempt - verification: ${hasLock} (value: ${verifyLock}, type: ${typeof verifyLock})`);
     } else {
       console.log(`🔐 Lock already exists, cannot acquire`);
     }
@@ -121,10 +122,11 @@ export default async function handler(req, res) {
           await redis.del(lockKey);
           // Try to acquire lock again (check first, then set)
           const checkLock = await redis.get(lockKey);
-          if (!checkLock) {
+          if (!checkLock || checkLock === null || checkLock === '') {
             await redis.set(lockKey, 'true', { ex: 300 });
             const verifyForceLock = await redis.get(lockKey);
-            if (verifyForceLock === 'true') {
+            // Handle both string 'true' and truthy values
+            if (verifyForceLock === 'true' || verifyForceLock === true || (verifyForceLock && verifyForceLock.toString() === 'true')) {
               console.log('✅ Force acquired lock, processing queue...');
               try {
                 await processNextJob();
@@ -231,7 +233,7 @@ async function processNextJob() {
       console.log(`   recruiterName: ${payload.recruiterName}`);
       console.log(`   recruiterEmail: ${payload.recruiterEmail}`);
       console.log(`   jobId: ${payload.jobId}`);
-      console.log(`   jobDescription: ${payload.jobDescription.substring(0, 100)}...`);
+      console.log(`   jobDescription: ${payload.jobDescription?.substring(0, 100) || 'N/A'}...`);
       
       const sendStartTime = Date.now();
       console.log(`⏱️  Sending request at: ${new Date().toISOString()}`);
