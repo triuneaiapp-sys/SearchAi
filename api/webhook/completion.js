@@ -17,7 +17,8 @@ export default async function handler(req, res) {
       if (jobId) {
         const jobJson = await redis.get(`job:${jobId}`);
         if (jobJson) {
-          const job = JSON.parse(jobJson);
+          // Handle both string and object responses from Redis
+          const job = typeof jobJson === 'string' ? JSON.parse(jobJson) : jobJson;
           await redis.set(`job:${jobId}`, JSON.stringify({
             ...job,
             status: 'completed',
@@ -40,7 +41,8 @@ export default async function handler(req, res) {
           for (const key of allKeys) {
             const jobJson = await redis.get(key);
             if (jobJson) {
-              const job = JSON.parse(jobJson);
+              // Handle both string and object responses from Redis
+              const job = typeof jobJson === 'string' ? JSON.parse(jobJson) : jobJson;
               if (job.status === 'sent' || job.status === 'processing') {
                 await redis.set(key, JSON.stringify({
                   ...job,

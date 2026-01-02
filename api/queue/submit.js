@@ -119,16 +119,20 @@ export default async function handler(req, res) {
         if (stillLocked && stillHasJobs > 0) {
           console.log('⚠️  Lock appears stuck - forcing lock release and processing...');
           await redis.del(lockKey);
-          // Try to acquire lock again
-          const forceLock = await redis.set(lockKey, 'true', { ex: 300, nx: true });
-          if (forceLock === 'OK' || forceLock === true || forceLock === 1) {
-            console.log('✅ Force acquired lock, processing queue...');
-            try {
-              await processNextJob();
-            } catch (processError) {
-              console.error('❌ Error in forced processing:', processError);
-            } finally {
-              await redis.del(lockKey);
+          // Try to acquire lock again (check first, then set)
+          const checkLock = await redis.get(lockKey);
+          if (!checkLock) {
+            await redis.set(lockKey, 'true', { ex: 300 });
+            const verifyForceLock = await redis.get(lockKey);
+            if (verifyForceLock === 'true') {
+              console.log('✅ Force acquired lock, processing queue...');
+              try {
+                await processNextJob();
+              } catch (processError) {
+                console.error('❌ Error in forced processing:', processError);
+              } finally {
+                await redis.del(lockKey);
+              }
             }
           }
         } else {

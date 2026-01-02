@@ -23,7 +23,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'Job not found' });
     }
 
-    const job = JSON.parse(jobJson);
+    // Handle both string and object responses from Redis
+    const job = typeof jobJson === 'string' ? JSON.parse(jobJson) : jobJson;
     return res.status(200).json(job);
   } catch (error) {
     console.error('Error fetching job status:', error);
