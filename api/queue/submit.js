@@ -182,7 +182,17 @@ async function processNextJob() {
     }
 
     processedCount++;
-    const job = JSON.parse(jobJson);
+    console.log(`📥 Popped job from queue. Type: ${typeof jobJson}`);
+    
+    // Handle both string and object responses from Redis
+    let job;
+    if (typeof jobJson === 'string') {
+      job = JSON.parse(jobJson);
+    } else if (typeof jobJson === 'object') {
+      job = jobJson; // Already parsed
+    } else {
+      throw new Error(`Unexpected job type: ${typeof jobJson}, value: ${jobJson}`);
+    }
     console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
     console.log(`📦 JOB #${processedCount}: ${job.id}`);
     console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
